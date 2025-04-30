@@ -1,0 +1,72 @@
+# AI SMS Agent - Python + Twilio + OpenAI (Flask Server)
+
+from flask import Flask, request, jsonify
+from twilio.rest import Client
+import openai
+import os
+import re
+
+app = Flask(__name__)
+
+# --- Config Variables (Replace with real values) ---
+TWILIO_SID = 'your_twilio_sid'
+TWILIO_AUTH = 'your_twilio_auth_token'
+TWILIO_PHONE = '+1XXXXXXXXXX'
+OPENAI_KEY = 'your_openai_api_key'
+
+client = Client(TWILIO_SID, TWILIO_AUTH)
+openai.api_key = OPENAI_KEY
+
+# --- Helper: Send SMS ---
+def send_sms(to_number, message):
+    client.messages.create(
+        body=message,
+        from_=TWILIO_PHONE,
+        to=to_number
+    )
+
+# --- Helper: Analyze Message with GPT ---
+def analyze_message(incoming_text):
+    prompt = f"A customer just replied: '{incoming_text}'. Determine sentiment (positive, neutral, negative) and what we should say in response."
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "system", "content": "You're a friendly customer service agent."},
+                  {"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content.strip()
+
+# --- Helper: Extract Referral ---
+def extract_phone_number(text):
+    match = re.search(r'\b\d{10}\b', text)
+    return match.group(0) if match else None
+
+# --- Route: Webhook for Incoming SMS ---
+@app.route('/sms-webhook', methods=['POST'])
+def sms_webhook():
+    from_number = request.form['From']
+    message_body = request.form['Body']
+
+    print(f"Message from {from_number}: {message_body}")
+
+    referral = extract_phone_number(message_body)
+    if referral:
+        send_sms(from_number, "Thanks! I’ll reach out to them and let them know you sent me.")
+        # Here you’d also log to Airtable or a database
+        return jsonify({'status': 'referral captured'})
+
+    gpt_response = analyze_message(message_body)
+    send_sms(from_number, gpt_response)
+    return jsonify({'status': 'responded'})
+
+# --- Main ---
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+
+Flask
+twilio
+openai
+
+
+web: python app.py
